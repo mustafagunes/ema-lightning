@@ -63,8 +63,9 @@ def batches(items, size):
 
 
 class Engine:
-    def __init__(self, model, decoder, device):
-        self.model, self.decoder, self.device = model, decoder, torch.device(device)
+    def __init__(self, model, decoder, device, runner=None):
+        self.model, self.decoder, self.runner = model, decoder, runner
+        self.device = torch.device(device)
         self.hop = decoder.hop
         self.graphs = None
         self.lock = threading.RLock()
@@ -137,6 +138,8 @@ class Engine:
         out = self.graphs.run(stage, **args) if self.graphs is not None else None
         if out is not None:
             return out
+        if self.runner is not None:
+            return self.runner.run(stage, args)
         if stage == "text":
             return self.model.text_stage(**args)
         if stage == "sound":

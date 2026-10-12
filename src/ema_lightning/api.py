@@ -29,6 +29,30 @@ from .model import load_acoustic
 from .scheduler import DONE, Playhead
 
 REPO = "canberkkkkkk/ema-lightning"
+
+
+def _require_mlx():
+    """MLX is optional, and its GPU runtime is Apple Silicon only."""
+    import platform
+    import sys
+
+    if sys.platform != "darwin" or platform.machine() != "arm64":
+        raise RuntimeError("device='mlx' requires an Apple Silicon Mac")
+    try:
+        import mlx.core  # noqa: F401
+    except ImportError as error:
+        if "No module named" in str(error):
+            raise RuntimeError("device='mlx' requires mlx; install with: pip install 'ema-lightning[mlx]'") from error
+        raise
+
+
+def _mlx_runner(model, decoder):
+    from .mlx_backend import MLXRunner, convert
+
+    mlx_model, mlx_decoder = convert(model, decoder)
+    return MLXRunner(mlx_model, mlx_decoder)
+
+
 PROBE = "Bugün hava çok güzel, yarın da yağmur yağacakmış; toplantı öğleden sonra başlayacak."
 FPS = 25  # frames per second of the acoustic model
 CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "ema_lightning" / "batch_size_v2.json"
@@ -59,30 +83,48 @@ class Speech:
 
 class EMA:
     def __init__(self, device="auto"):
-        device = torch.device(("cuda" if torch.cuda.is_available() else "cpu") if device == "auto" else device)
+        use_mlx = device == "mlx"
+        if use_mlx:
+            _require_mlx()
+            device = torch.device("cpu")
+        else:
+            device = torch.device(("cuda" if torch.cuda.is_available() else "cpu") if device == "auto" else device)
         try:  # the Hub counts a download each time config.json is requested; nothing here depends on it
             hf_hub_download(REPO, "config.json")
         except Exception:
             pass
         model = load_acoustic(hf_hub_download(REPO, "ema.pt"), device)
         decoder = load_decoder(hf_hub_download(REPO, "decoder.pt"), device)
-        self._setup(model, decoder, Frontend(model.vocab), device)
+        runner = _mlx_runner(model, decoder) if use_mlx else None
+        if runner is not None:
+            model, decoder = runner.model, runner.decoder
+        self._setup(model, decoder, Frontend(model.vocab), device, runner)
 
     @classmethod
     def _from_parts(cls, model, decoder, frontend, device):
         self = cls.__new__(cls)
-        self._setup(model, decoder, frontend, device)
+        runner = None
+        if device == "mlx":
+            _require_mlx()
+            runner = _mlx_runner(model, decoder)
+            model, decoder = runner.model, runner.decoder
+            device = "cpu"
+        self._setup(model, decoder, frontend, device, runner)
         return self
 
-    def _setup(self, model, decoder, frontend, device):
+    def _setup(self, model, decoder, frontend, device, runner=None):
         self.device = torch.device(device)
-        self._engine = Engine(model, decoder, self.device)
+        self.backend = "mlx" if runner is not None else self.device.type
+        self._engine = Engine(model, decoder, self.device, runner)
         self._frontend = frontend
         self._batch_size = None
         self._playhead = Playhead(self._engine, self._list_batch)
 
     def lightning(self, batch_size=None):
         """Compile and record every stage as CUDA graphs, check them against the plain path, report ready."""
+        if self.backend == "mlx":
+            warnings.warn("lightning() is the CUDA path; MLX already runs on the Apple GPU", stacklevel=2)
+            return self
         if self.device.type != "cuda":
             warnings.warn("lightning needs a CUDA GPU; EMA keeps working without it", stacklevel=2)
             return self
@@ -118,7 +160,12 @@ class EMA:
         """The smallest batch that reaches 90% of this device's best throughput, measured once and cached."""
         if self._batch_size:
             return self._batch_size
-        key = torch.cuda.get_device_name(self.device) if self.device.type == "cuda" else f"cpu-{os.cpu_count()}"
+        if self.backend == "mlx":
+            key = "mlx"
+        elif self.device.type == "cuda":
+            key = torch.cuda.get_device_name(self.device)
+        else:
+            key = f"cpu-{os.cpu_count()}"
         cached = json.loads(CACHE.read_text()) if CACHE.exists() else {}
         if key not in cached:
             sizes = (1, 2, 4, 8, 16, 32, 64, 128) if self.device.type == "cuda" else (1, 2, 4, 8)

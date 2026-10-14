@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `EMA(device="mlx")` runs the acoustic model and the decoder with MLX on Apple Silicon. `EMA()` is unchanged.
+
 ## 1.1.2
 
 - Text frontend on normalizer-tr 0.6. Brand names keep their reading with

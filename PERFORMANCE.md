@@ -33,6 +33,28 @@ cloud-container CPU).
 At $0.74 an hour for a rented RTX 4090, the batched compiled path reads about
 24,000 characters a second: about $0.0085 per million characters.
 
+## Apple Silicon
+
+Apple M3 Pro. One sentence, the package probe ("Bugün hava çok güzel, yarın da
+yağmur yağacakmış; toplantı öğleden sonra başlayacak."), 4.68 s of audio. Median
+of five `say()` calls and five first `stream()` chunks after `best_batch_size()`
+had already run. `device="auto"` does not select MLX; this is `device="mlx"`
+against PyTorch on the same machine.
+
+| | `say()` | First chunk | Real time |
+|---|---|---|---|
+| CPU | 268 ms | 245 ms | 17.4× |
+| PyTorch MPS | 79 ms | 74 ms | 59.4× |
+| MLX | 49 ms | 51 ms | 94.9× |
+
+The same seed draws the same noise as CPU. On that sentence the MLX waveform
+sat 85 dB under the speech (the project bar is 40 dB). Install the optional
+extra `ema-lightning[mlx]`, then:
+
+```sh
+python benches/mlx_bench.py
+```
+
 ## The package on an RTX PRO 6000
 
 Measured with this package (`lightning()`, cuDNN benchmark mode on), RTX PRO 6000

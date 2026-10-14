@@ -40,6 +40,13 @@ python -m pip install ema-lightning
 CPython 3.11 to 3.13 with PyTorch 2.1 or newer. The weights (about 34 MB) download
 from [Hugging Face](https://huggingface.co/canberkkkkkk/ema-lightning) on first use.
 
+Apple Silicon can run the model with MLX. That extra is optional, and `EMA()`
+does not turn it on by itself:
+
+```sh
+python -m pip install "ema-lightning[mlx]"
+```
+
 On Linux the default PyTorch build includes CUDA, which pulls in about 1.5 GB of
 NVIDIA packages. On a machine without an NVIDIA GPU, install the CPU-only build
 instead:
@@ -185,6 +192,17 @@ plain path and prints when it's ready, with its first-audio time. It takes
 seconds, and everything after is faster. Without it, or on a CPU, everything works
 the same, just slower.
 
+### On Apple Silicon
+
+```python
+tts = EMA(device="mlx")
+```
+
+`say()` and `stream()` stay the same. The three model stages run on the GPU.
+`.lightning()` remains the NVIDIA path. Speak one sentence with
+`python examples/mlx_say.py "Merhaba."`. Speed on an M3 Pro is in
+[PERFORMANCE.md](PERFORMANCE.md).
+
 ### Options
 
 `say()` and `stream()` take the same options; `path` is for `say()` only.
@@ -279,9 +297,17 @@ and its known limits.
 | Batch of 64 | 952× real time | 1,316× real time |
 | First audio, typical sentence | | 3.86 ms |
 
-On a CPU it runs about 6× faster than real time. The details, the RTX PRO 6000
-numbers and how to measure on your own machine are in
-[PERFORMANCE.md](PERFORMANCE.md).
+On a cloud CPU it runs about 6× faster than real time. On an Apple M3 Pro, one
+sentence after warm-up:
+
+| M3 Pro | One sentence | First audio |
+|---|---|---|
+| MLX, `device="mlx"` | 95× real time | 51 ms |
+| PyTorch MPS | 59× real time | 74 ms |
+| CPU | 17× real time | 245 ms |
+
+`EMA()` still picks CUDA or CPU. The 4090 figures, this Mac and how they were
+measured are in [PERFORMANCE.md](PERFORMANCE.md).
 
 ## Limitations
 

@@ -11,6 +11,12 @@ are downloaded from `canberkkkkkk/ema-lightning` on Hugging Face on first use an
 cached by `huggingface_hub`. `device="auto"` picks CUDA when it is available,
 otherwise the CPU; any `torch.device` string works.
 
+`device="mlx"` runs the three model stages with MLX on an Apple Silicon GPU.
+It needs the optional extra: `pip install "ema-lightning[mlx]"`. Playhead, text
+normalization and WAV writing stay as they are. The same seed draws the same
+noise as the CPU path, so the audio matches it to within floating-point error.
+`EMA.backend` is `"mlx"`, `"cuda"` or `"cpu"`.
+
 Reuse one `EMA` for the whole process.
 
 ## `EMA.lightning(batch_size=None)`
@@ -35,15 +41,16 @@ The fast path for NVIDIA GPUs. Returns the same `EMA`, so it chains:
    long `say()` takes for a short sentence, and the batch size.
 
 Without CUDA it warns and returns immediately; everything keeps working on the
-plain path. Calling it twice is harmless.
+plain path. `device="mlx"` warns and returns too: MLX does not use CUDA graphs.
+Calling it twice is harmless.
 
 ## `EMA.best_batch_size()`
 
 The smallest batch that reaches 90% of this device's best throughput. Measured
-once per device (1 to 128 on CUDA, 1 to 8 on CPU) and cached in
-`$XDG_CACHE_HOME/ema_lightning/batch_size_v2.json` (default `~/.cache`). It is the
-most sentences or windows that go into one batch, and `lightning()` records graphs
-up to it.
+once per device (1 to 128 on CUDA, 1 to 8 on CPU and MLX) and cached in
+`$XDG_CACHE_HOME/ema_lightning/batch_size_v2.json` (default `~/.cache`). The MLX
+entry is stored under the key `mlx`. It is the most sentences or windows that go
+into one batch, and `lightning()` records graphs up to it.
 
 ## `EMA.say(text, speed=1.0, seed=None, sample_rate=48000, path=None)`
 
